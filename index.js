@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch'); // ถ้าใช้ Node 18+ คุณอาจใช้ global fetch แทน
+const fetch = require('node-fetch'); // ถ้าใช้ Node 18+ คุณอาจใช้ global fetch ได้เลย
 const crypto = require('crypto');
 
 const app = express();
@@ -10,8 +10,10 @@ const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const FIREBASE_URL = (process.env.FIREBASE_URL || '').replace(/\/+$/, ''); // remove trailing slash
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
 
+// ================================================
+// 🔹 Verify LINE Signature
+// ================================================
 function verifySignature(req) {
     const signature = req.get('x-line-signature') || '';
     const body = JSON.stringify(req.body);
@@ -19,8 +21,11 @@ function verifySignature(req) {
     return hash === signature;
 }
 
-async function setLED(value) {
-    const url = `${FIREBASE_URL}/led.json`;
+// ================================================
+// 🔹 Save command to Firebase
+// ================================================
+async function setCommand(value) {
+    const url = `${FIREBASE_URL}/command.json`;
     const res = await fetch(url, {
         method: 'PUT',
         body: JSON.stringify(value),
@@ -30,31 +35,24 @@ async function setLED(value) {
     return res.json();
 }
 
-async function getLED() {
-    const url = `${FIREBASE_URL}/led.json`;
-    const res = await fetch(url);
-    return res.ok ? res.json() : null;
-}
-
+// ================================================
+// 🔹 Webhook from LINE
+// ================================================
 app.post('/webhook', async (req, res) => {
-    // production: enable verification (must set LINE_CHANNEL_SECRET correctly in env)
     if (!verifySignature(req)) return res.status(401).send('Invalid signature');
 
     const events = req.body.events || [];
     for (const event of events) {
         if (event.type === 'message' && event.message.type === 'text') {
-            const msg = event.message.text.trim().toLowerCase();
-            let replyText = 'Unknown command';
+            const msg = event.message.text.trim();
+            let replyText = '❓ กรุณาพิมพ์ว่า "เปิด" หรือ "ปิด" เท่านั้น';
 
-            if (msg === 'on') {
-                await setLED(true);
-                replyText = '💡 LED turned ON';
-            } else if (msg === 'off') {
-                await setLED(false);
-                replyText = '💤 LED turned OFF';
-            } else if (msg === 'status') {
-                const cur = await getLED();
-                replyText = cur ? '💡 LED is ON' : '💤 LED is OFF';
+            if (msg === 'เปิด') {
+                await setCommand("เปิด");
+                replyText = '✅ รับคำสั่ง: เปิดหลังคา';
+            } else if (msg === 'ปิด') {
+                await setCommand("ปิด");
+                replyText = '✅ รับคำสั่ง: ปิดหลังคา';
             }
 
             await fetch('https://api.line.me/v2/bot/message/reply', {
@@ -74,5 +72,12 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
+// ================================================
+// 🔹 Root Endpoint
+// ================================================
 app.get('/', (req, res) => res.send('OK'));
+
+// ================================================
+// 🔹 Start Server
+// ================================================
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
